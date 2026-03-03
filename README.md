@@ -45,7 +45,7 @@ cd nhs-england-tools/dependabot-policy-enforcer-action
 
 The following software packages, or their equivalents, are expected to be installed and configured:
 
-- [Node.js](https://nodejs.org/) 20 or later,
+- [Node.js](https://nodejs.org/) 24 or later,
 - [Yarn](https://yarnpkg.com/) 4.x — enable via `corepack enable`.
 
 ### Configuration
@@ -207,7 +207,7 @@ Raise an issue or open a pull request against this repository. Please ensure:
 
 - Code changes are covered by tests (`yarn test --run`)
 - Commits follow the repository conventions
-- Any changes to the signing algorithm are reflected in `scripts/hmac-helper.ts`
+- Any changes to the signing algorithm are made in `src/lib/signing.ts` (the single source of truth) and covered by tests in `src/__tests__/signing.test.ts`
 
 ## Contacts
 

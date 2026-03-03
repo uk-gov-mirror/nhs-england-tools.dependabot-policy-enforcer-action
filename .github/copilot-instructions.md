@@ -6,7 +6,7 @@ This repository implements a reusable GitHub Action that validates Dependabot po
 
 ## Language and toolchain
 
-- **TypeScript** targeting Node.js 20+
+- **TypeScript** targeting Node.js 24+
 - **Yarn 4.x** for package management (`corepack enable` to activate)
 - **Vitest** for unit tests — run with `yarn test --run`
 - **asdf** for runtime version pinning (see `.tool-versions`)
@@ -31,16 +31,25 @@ TypeScript-specific conventions:
 ## Architecture
 
 ```text
-scripts/
-  hmac-helper.ts          # Core signing logic and CLI tool
+src/
+  main.ts                 # GitHub Action entry point
+  lib/
+    signing.ts            # Core signing logic — single source of truth
+    request.ts            # HTTP request helper
   __tests__/
-    hmac-helper.test.ts   # Vitest unit tests for all exported functions
+    signing.test.ts       # Vitest unit tests for signing functions
+    request.test.ts       # Vitest unit tests for request helpers
+    main.test.ts          # Vitest unit tests for the action entry point
+scripts/
+  hmac-helper.ts          # CLI tool — thin re-export wrapper over src/lib/signing.ts
+  __tests__/
+    hmac-helper.test.ts   # Vitest unit tests for CLI-specific behaviour
 .github/
   actions/                # Reusable composite actions (lint, scan, etc.)
   workflows/              # CI/CD pipeline stages
 ```
 
-The signing logic in `scripts/hmac-helper.ts` is the authoritative reference implementation. Any changes to the signing algorithm must be reflected here and covered by tests.
+The signing logic in `src/lib/signing.ts` is the single source of truth. Any changes to the signing algorithm must be made there and covered by tests. `scripts/hmac-helper.ts` re-exports from `src/lib/signing.ts` and adds only CLI wiring — do not duplicate signing logic there.
 
 ## Signing algorithm
 
@@ -70,7 +79,7 @@ Request headers sent with every API call:
 
 ## Testing
 
-- Every exported function must have unit test coverage in `scripts/__tests__/hmac-helper.test.ts`
+- Every exported function in `src/lib/signing.ts` must have unit test coverage in `src/__tests__/signing.test.ts`; CLI-specific behaviour in `scripts/hmac-helper.ts` is covered by `scripts/__tests__/hmac-helper.test.ts`
 - Use `describe` blocks to group related tests and `it` for individual cases
 - Mock time-dependent functions (e.g. `nowIso`) using `vi.spyOn` or `vi.fn()` — tests must be deterministic
 - Test both happy paths and error/edge cases (missing options, malformed inputs, invalid signatures, expired timestamps, etc.)

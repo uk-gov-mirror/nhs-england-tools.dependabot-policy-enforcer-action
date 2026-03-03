@@ -40,17 +40,6 @@ export {
   type ValidationError,
 } from '../src/lib/signing.js'
 
-import {
-  formatOutput,
-  generateSignature,
-  verifySignature,
-  generateInvalidSignature,
-  validateRequiredOptions,
-  type OutputData,
-  type VerifyResult,
-  type InvalidKind,
-} from '../src/lib/signing.js'
-
 type IncomingHttpHeaders = http.IncomingHttpHeaders
 
 const DEFAULT_METHOD = 'POST'

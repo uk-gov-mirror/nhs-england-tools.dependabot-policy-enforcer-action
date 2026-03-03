@@ -31,21 +31,11 @@ export async function run(): Promise<void> {
     // ---------------------------------------------------------------
     // 2. Mask secret immediately
     // ---------------------------------------------------------------
-    if (secret) {
-      core.setSecret(secret)
-    }
+    core.setSecret(secret)
 
     // ---------------------------------------------------------------
     // 3. Validate inputs
     // ---------------------------------------------------------------
-    if (!secret) {
-      core.setFailed(
-        'DEPENDABOT_ENFORCER_SECRET is not set or is empty. ' +
-        'Add it as a repository secret and pass it via the "secret" input.'
-      )
-      return
-    }
-
     if (!endpoint) {
       core.setFailed(
         'api-endpoint input is required. ' +
