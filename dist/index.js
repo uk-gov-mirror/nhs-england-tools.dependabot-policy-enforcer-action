@@ -19913,8 +19913,8 @@ function validateUrl(value) {
 }
 async function run() {
   try {
-    const secret = core.getInput("secret", { required: true });
-    const endpoint = core.getInput("api-endpoint", { required: true });
+    const secret = core.getInput("secret");
+    const endpoint = core.getInput("api-endpoint");
     const timeoutMs = Number.parseInt(core.getInput("timeout-ms") || "10000", 10);
     const repo = process.env.GITHUB_REPOSITORY ?? "";
     core.setSecret(secret);
