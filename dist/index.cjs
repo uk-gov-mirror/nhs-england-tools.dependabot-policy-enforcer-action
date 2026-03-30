@@ -19903,6 +19903,13 @@ async function sendPolicyRequest(opts) {
 }
 
 // src/main.ts
+var LOG_STYLE = {
+  reset: "\x1B[0m",
+  bold: "\x1B[1m",
+  green: "\x1B[32m",
+  yellow: "\x1B[33m",
+  red: "\x1B[31m"
+};
 function validateUrl(value) {
   try {
     new URL(value);
@@ -19969,29 +19976,30 @@ async function run() {
     if (result.statusCode >= 200 && result.statusCode < 300) {
       if (body.pipelinePasses == "false") {
         core.setFailed(
-          `Policy check failed: 
-${JSON.stringify(body, null, 2)}`
+          `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} 
+${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         );
         return;
       } else if (body.pipelinePasses == "true" && body.message) {
         core.info(
-          `Policy check message: ${body.message} 
-Response: ${JSON.stringify(body, null, 2)}`
+          `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} 
+${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}
+${LOG_STYLE.bold}Findings:${LOG_STYLE.reset} ${JSON.stringify(body.findings, null, 2)}`
         );
         return;
       }
       core.info(
-        `Policy check passed (${result.statusCode}) in ${result.durationMs}ms.`
+        `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`
       );
     } else {
       core.setFailed(
-        `Policy check failed with status ${result.statusCode} (${result.durationMs}ms).
-Response: ${JSON.stringify(body, null, 2)}`
+        `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed with status ${result.statusCode} (${result.durationMs}ms).${LOG_STYLE.reset}
+${LOG_STYLE.bold}Response:${LOG_STYLE.reset} ${result.body}`
       );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    core.setFailed(`Unexpected error: ${message}`);
+    core.setFailed(`${LOG_STYLE.bold}${LOG_STYLE.red}Unexpected error:${LOG_STYLE.reset} ${message}`);
   }
 }
 run();

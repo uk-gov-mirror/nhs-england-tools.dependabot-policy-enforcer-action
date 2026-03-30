@@ -161,9 +161,9 @@ describe('Action Entry Point (run)', () => {
 
     await run()
 
-    expect(mockInfo).toHaveBeenCalledWith(
-      expect.stringContaining('Policy check message: Some failure')
-    )
+    const loggedOutput = mockInfo.mock.calls.map(([msg]) => String(msg)).join('\n')
+    expect(loggedOutput).toContain('Policy check message:')
+    expect(loggedOutput).toContain('Some failure')
   })
 
   it('should log generic success message if pipelinePasses is true without a message', async () => {

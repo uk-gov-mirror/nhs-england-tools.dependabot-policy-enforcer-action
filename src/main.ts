@@ -9,6 +9,14 @@
 import * as core from '@actions/core'
 import { sendPolicyRequest } from './lib/request.js'
 
+const LOG_STYLE = {
+reset: '\x1b[0m',
+bold: '\x1b[1m',
+green: '\x1b[32m',
+yellow: '\x1b[33m',
+red: '\x1b[31m',
+}
+
 function validateUrl(value: string): boolean {
   try {
     new URL(value)
@@ -106,29 +114,30 @@ export async function run(): Promise<void> {
     if (result.statusCode >= 200 && result.statusCode < 300) {
       if (body.pipelinePasses == 'false') {
         core.setFailed(
-          `Policy check failed: \n` +
-          `${JSON.stringify(body, null, 2)}`
+          `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} \n` +
+          `${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         )
         return
       } else if (body.pipelinePasses == 'true' && body.message) {
         core.info(
-          `Policy check message: ${body.message} \n` +
-          `Response: ${JSON.stringify(body, null, 2)}`
+          `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} \n` +
+          `${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}\n` +
+          `${LOG_STYLE.bold}Findings:${LOG_STYLE.reset} ${JSON.stringify(body.findings, null, 2)}`
         )
         return
       }
       core.info(
-      `Policy check passed (${result.statusCode}) in ${result.durationMs}ms.`
+        `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`
       )
     } else {
       core.setFailed(
-        `Policy check failed with status ${result.statusCode} (${result.durationMs}ms).\n` +
-        `Response: ${JSON.stringify(body, null, 2)}`
+        `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed with status ${result.statusCode} (${result.durationMs}ms).${LOG_STYLE.reset}\n` +
+        `${LOG_STYLE.bold}Response:${LOG_STYLE.reset} ${result.body}`
       )
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    core.setFailed(`Unexpected error: ${message}`)
+    core.setFailed(`${LOG_STYLE.bold}${LOG_STYLE.red}Unexpected error:${LOG_STYLE.reset} ${message}`)
   }
 }
 
