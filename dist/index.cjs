@@ -19916,12 +19916,12 @@ function extractPrNumber(eventName, ref) {
 function buildCommentBody(passed, policy) {
   const statusLine = passed ? "**Status:** \u2705 Passed" : "**Status:** \u274C Failed";
   const lines = [COMMENT_MARKER, "## Dependabot Policy Check", "", statusLine];
-  const summary = policy.summary;
+  const summary = policy.summary ?? {};
   lines.push("", " ### Summary:");
   for (const [key, value] of Object.entries(summary)) {
     lines.push(`- **${key}:** ${value}`);
   }
-  const violations = policy.findings.violations;
+  const violations = policy.findings?.violations ?? {};
   lines.push("", "### Violations:");
   for (const [key, value] of Object.entries(violations)) {
     lines.push(`- **${key}:** ${value.length}`);
