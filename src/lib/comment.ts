@@ -49,7 +49,7 @@ export function buildCommentBody(passed: boolean, policy: PolicyResponse): strin
     lines.push(`- **${key}:** ${value}`)
   }
 
-  const violations = policy.findings?.violations ?? {}
+  const violations = policy.findings?? {}
   lines.push('', '### Violations:')
   for (const [key, value] of Object.entries(violations)) {
     lines.push(`- **${key}:** ${value.length}`)
