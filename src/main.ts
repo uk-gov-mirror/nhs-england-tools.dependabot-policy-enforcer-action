@@ -8,6 +8,7 @@
 
 import * as core from "@actions/core";
 import { sendPolicyRequest } from "./lib/request.js";
+import { postPrComment, extractPrNumber } from "./lib/comment.js";
 
 const LOG_STYLE = {
   reset: "\x1b[0m",
@@ -95,7 +96,15 @@ export async function run(): Promise<void> {
     }
 
     // ---------------------------------------------------------------
-    // 4. Send signed request
+    // 4. Read optional github-token and mask it immediately
+    // ---------------------------------------------------------------
+    const githubToken = core.getInput("github-token");
+    if (githubToken) {
+      core.setSecret(githubToken);
+    }
+
+    // ---------------------------------------------------------------
+    // 5. Send signed request
     // ---------------------------------------------------------------
     core.info(`Checking Dependabot policy for ${repo}…`);
 
@@ -108,7 +117,7 @@ export async function run(): Promise<void> {
     });
 
     // ---------------------------------------------------------------
-    // 5. Set outputs
+    // 6. Set outputs
     // ---------------------------------------------------------------
     core.setOutput("status-code", result.statusCode.toString());
     core.setOutput("response-body", result.body);
@@ -118,23 +127,40 @@ export async function run(): Promise<void> {
       // More information on the dependabot policy enforcer API can be found on:
       // https://github.com/NHSDigital/github-scanning-utils/tree/main/event-processing-lambdas/lambda/dependabot_policy_enforcer
       const body = JSON.parse(result.body);
-      if (body.pipelinePasses === "false") {
+      const passed = body.pipelinePasses === "true";
+      if (!passed) {
         core.setFailed(
           `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} \n` +
             `${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`,
         );
-        return;
-      } else if (body.pipelinePasses === "true" && body.message) {
+      } else if (passed && body.message) {
         core.info(
           `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} \n` +
             `${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}\n` +
             `${LOG_STYLE.bold}Findings:${LOG_STYLE.reset} ${JSON.stringify(body.findings, null, 2)}`,
         );
-        return;
+      } else {
+        core.info(
+          `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`,
+        );
       }
-      core.info(
-        `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`,
-      );
+
+      // Post a PR comment if the github-token is provided, regardless of pass/fail, but only for "pull_request" events
+      if (githubToken) {
+        const prNumber = extractPrNumber(
+          process.env.GITHUB_EVENT_NAME,
+          process.env.GITHUB_REF,
+        );
+        try {
+          await postPrComment(githubToken, repo, prNumber, body, passed);
+        } catch (commentError) {
+          const commentMsg =
+            commentError instanceof Error
+              ? commentError.message
+              : String(commentError);
+          core.warning(`Failed to post PR comment: ${commentMsg}`);
+        }
+      }
     } else {
       core.setFailed(
         `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed with status ${result.statusCode} (${result.durationMs}ms).${LOG_STYLE.reset}\n` +

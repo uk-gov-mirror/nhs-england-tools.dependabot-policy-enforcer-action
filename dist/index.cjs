@@ -17459,7 +17459,7 @@ var require_lib = __commonJS({
       return parsedUrl.protocol === "https:";
     }
     exports2.isHttps = isHttps;
-    var HttpClient2 = class {
+    var HttpClient3 = class {
       constructor(userAgent, handlers, requestOptions) {
         this._ignoreSslError = false;
         this._allowRedirects = true;
@@ -17903,7 +17903,7 @@ var require_lib = __commonJS({
         });
       }
     };
-    exports2.HttpClient = HttpClient2;
+    exports2.HttpClient = HttpClient3;
     var lowercaseKeys = (obj) => Object.keys(obj).reduce((c, k) => (c[k.toLowerCase()] = obj[k], c), {});
   }
 });
@@ -19740,10 +19740,10 @@ Support boolean input list: \`true | True | TRUE | false | False | FALSE\``);
       (0, command_1.issueCommand)("error", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
     exports2.error = error;
-    function warning(message, properties = {}) {
+    function warning2(message, properties = {}) {
       (0, command_1.issueCommand)("warning", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
-    exports2.warning = warning;
+    exports2.warning = warning2;
     function notice(message, properties = {}) {
       (0, command_1.issueCommand)("notice", (0, utils_1.toCommandProperties)(properties), message instanceof Error ? message.toString() : message);
     }
@@ -19902,6 +19902,118 @@ async function sendPolicyRequest(opts) {
   }
 }
 
+// src/lib/comment.ts
+var import_http_client2 = __toESM(require_lib(), 1);
+var USER_AGENT2 = "dependabot-policy-enforcer-action";
+var GITHUB_API_BASE = "https://api.github.com";
+var COMMENT_MARKER = "<!-- dependabot-policy-enforcer -->";
+function extractPrNumber(eventName, ref) {
+  if (!eventName || !ref) return null;
+  if (eventName !== "pull_request" && eventName !== "pull_request_target") return null;
+  const m = /refs\/pull\/(\d+)\//.exec(ref);
+  return m ? Number.parseInt(m[1], 10) : null;
+}
+function buildCommentBody(passed, policy) {
+  const statusLine = passed ? "**Status:** \u2705 Passed" : "**Status:** \u274C Failed";
+  const lines = [COMMENT_MARKER, "## Dependabot Policy Check", "", statusLine];
+  const summary = policy.summary;
+  lines.push("", " ### Summary:");
+  for (const [key, value] of Object.entries(summary)) {
+    lines.push(`- **${key}:** ${value}`);
+  }
+  const violations = policy.findings.violations;
+  lines.push("", "### Violations:");
+  for (const [key, value] of Object.entries(violations)) {
+    lines.push(`- **${key}:** ${value.length}`);
+  }
+  return lines.join("\n");
+}
+function githubHeaders(token) {
+  return {
+    "Authorization": `Bearer ${token}`,
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+async function listPrComments(opts) {
+  const { token, owner, repo, prNumber } = opts;
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`;
+  const client = new import_http_client2.HttpClient(USER_AGENT2);
+  try {
+    const response = await client.get(url, githubHeaders(token));
+    const body = await response.readBody();
+    const status = response.message.statusCode ?? 0;
+    if (status < 200 || status >= 300) {
+      throw new Error(`GitHub API error listing comments: HTTP ${status}`);
+    }
+    return JSON.parse(body);
+  } finally {
+    client.dispose();
+  }
+}
+async function createPrComment(opts, body) {
+  const { token, owner, repo, prNumber } = opts;
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/${prNumber}/comments`;
+  const client = new import_http_client2.HttpClient(USER_AGENT2);
+  try {
+    const response = await client.post(url, JSON.stringify({ body }), {
+      ...githubHeaders(token),
+      "Content-Type": "application/json"
+    });
+    const status = response.message.statusCode ?? 0;
+    if (status !== 201) {
+      const responseBody = await response.readBody();
+      throw new Error(`GitHub API error creating comment: HTTP ${status} ${responseBody}`);
+    }
+    await response.readBody();
+  } finally {
+    client.dispose();
+  }
+}
+async function updatePrComment(opts, body) {
+  const { token, owner, repo, commentId } = opts;
+  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/comments/${commentId}`;
+  const client = new import_http_client2.HttpClient(USER_AGENT2);
+  try {
+    const response = await client.patch(url, JSON.stringify({ body }), {
+      ...githubHeaders(token),
+      "Content-Type": "application/json"
+    });
+    const status = response.message.statusCode ?? 0;
+    if (status !== 200) {
+      const responseBody = await response.readBody();
+      throw new Error(`GitHub API error updating comment: HTTP ${status} ${responseBody}`);
+    }
+    await response.readBody();
+  } finally {
+    client.dispose();
+  }
+}
+async function upsertPrComment(opts, body) {
+  const comments = await listPrComments(opts);
+  const existing = comments.find(
+    (c) => typeof c.body === "string" && c.body.includes(COMMENT_MARKER)
+  );
+  if (existing) {
+    await updatePrComment(
+      { token: opts.token, owner: opts.owner, repo: opts.repo, commentId: existing.id },
+      body
+    );
+  } else {
+    await createPrComment(opts, body);
+  }
+}
+async function postPrComment(githubToken, repo, prNumber, body, passed) {
+  if (prNumber !== null) {
+    const [owner, repoName] = repo.split("/");
+    const commentBody = buildCommentBody(passed, body);
+    await upsertPrComment(
+      { token: githubToken, owner, repo: repoName, prNumber },
+      commentBody
+    );
+  }
+}
+
 // src/main.ts
 var LOG_STYLE = {
   reset: "\x1B[0m",
@@ -19965,6 +20077,10 @@ async function run() {
       );
       return;
     }
+    const githubToken = core.getInput("github-token");
+    if (githubToken) {
+      core.setSecret(githubToken);
+    }
     core.info(`Checking Dependabot policy for ${repo}\u2026`);
     const result = await sendPolicyRequest({
       repo,
@@ -19977,23 +20093,35 @@ async function run() {
     core.setOutput("response-body", result.body);
     if (result.statusCode >= 200 && result.statusCode < 300) {
       const body = JSON.parse(result.body);
-      if (body.pipelinePasses === "false") {
+      const passed = body.pipelinePasses === "true";
+      if (!passed) {
         core.setFailed(
           `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} 
 ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         );
-        return;
-      } else if (body.pipelinePasses === "true" && body.message) {
+      } else if (passed && body.message) {
         core.info(
           `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} 
 ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}
 ${LOG_STYLE.bold}Findings:${LOG_STYLE.reset} ${JSON.stringify(body.findings, null, 2)}`
         );
-        return;
+      } else {
+        core.info(
+          `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`
+        );
       }
-      core.info(
-        `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`
-      );
+      if (githubToken) {
+        const prNumber = extractPrNumber(
+          process.env.GITHUB_EVENT_NAME,
+          process.env.GITHUB_REF
+        );
+        try {
+          await postPrComment(githubToken, repo, prNumber, body, passed);
+        } catch (commentError) {
+          const commentMsg = commentError instanceof Error ? commentError.message : String(commentError);
+          core.warning(`Failed to post PR comment: ${commentMsg}`);
+        }
+      }
     } else {
       core.setFailed(
         `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed with status ${result.statusCode} (${result.durationMs}ms).${LOG_STYLE.reset}
