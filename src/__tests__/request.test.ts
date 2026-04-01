@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import http from 'node:http'
-import { sendPolicyRequest, truncateBody } from '../../src/lib/request.js'
+import { sendPolicyRequest } from '../../src/lib/request.js'
 import { hmacHex } from '../../src/lib/signing.js'
 
 describe('sendPolicyRequest', () => {
@@ -121,20 +121,6 @@ describe('sendPolicyRequest', () => {
     expect(result.body).toContain('FORBIDDEN_REPO')
   })
 
-  it('should truncate response bodies exceeding 2000 chars', async () => {
-    nextStatus = 200
-    nextResponseBody = { data: 'x'.repeat(3000) }
-
-    const result = await sendPolicyRequest({
-      repo: 'test-org/test-repo',
-      secret: 'test-secret',
-      endpoint: endpointUrl,
-      mode: 'enforce',
-    })
-
-    expect(result.body.length).toBeLessThanOrEqual(2100) // 2000 + truncation message
-    expect(result.body).toContain('truncated')
-  })
 
   it('should handle connection errors gracefully', async () => {
     await expect(
@@ -161,25 +147,3 @@ describe('sendPolicyRequest', () => {
   })
 })
 
-describe('truncateBody', () => {
-  it('should return the body unchanged when below the limit', () => {
-    const body = 'x'.repeat(1999)
-    expect(truncateBody(body)).toBe(body)
-  })
-
-  it('should return the body unchanged when exactly at the limit', () => {
-    const body = 'x'.repeat(2000)
-    expect(truncateBody(body)).toBe(body)
-  })
-
-  it('should truncate body exceeding the limit and append overflow message', () => {
-    const body = 'x'.repeat(2500)
-    const result = truncateBody(body)
-    expect(result).toMatch(/… \[truncated 500 chars\]$/)
-    expect(result.startsWith('x'.repeat(2000))).toBe(true)
-  })
-
-  it('should return an empty string unchanged', () => {
-    expect(truncateBody('')).toBe('')
-  })
-})

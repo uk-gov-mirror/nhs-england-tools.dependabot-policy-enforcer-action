@@ -25,14 +25,6 @@ export interface PolicyRequestResult {
   durationMs: number
 }
 
-export function truncateBody(body: string): string {
-  if (body.length <= MAX_BODY_LOG_LENGTH) {
-    return body
-  }
-  const overflow = body.length - MAX_BODY_LOG_LENGTH
-  return `${body.slice(0, MAX_BODY_LOG_LENGTH)}… [truncated ${overflow} chars]`
-}
-
 export async function sendPolicyRequest(opts: PolicyRequestOptions): Promise<PolicyRequestResult> {
   const { repo, secret, endpoint, mode, timeoutMs = 10_000 } = opts
 
@@ -60,7 +52,7 @@ export async function sendPolicyRequest(opts: PolicyRequestOptions): Promise<Pol
 
     return {
       statusCode: response.message.statusCode ?? 0,
-      body: truncateBody(rawBody.trim() || '<empty>'),
+      body: rawBody.trim(),
       durationMs,
     }
   } finally {
