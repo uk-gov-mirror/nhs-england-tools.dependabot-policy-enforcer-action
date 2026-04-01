@@ -19864,15 +19864,7 @@ function generateSignature(opts) {
 }
 
 // src/lib/request.ts
-var MAX_BODY_LOG_LENGTH = 2e3;
 var USER_AGENT = "dependabot-policy-enforcer-action";
-function truncateBody(body) {
-  if (body.length <= MAX_BODY_LOG_LENGTH) {
-    return body;
-  }
-  const overflow = body.length - MAX_BODY_LOG_LENGTH;
-  return `${body.slice(0, MAX_BODY_LOG_LENGTH)}\u2026 [truncated ${overflow} chars]`;
-}
 async function sendPolicyRequest(opts) {
   const { repo, secret, endpoint, mode, timeoutMs = 1e4 } = opts;
   const signatureData = generateSignature({ repo, secret });
@@ -19894,7 +19886,7 @@ async function sendPolicyRequest(opts) {
     const rawBody = await response.readBody();
     return {
       statusCode: response.message.statusCode ?? 0,
-      body: truncateBody(rawBody.trim() || "<empty>"),
+      body: rawBody.trim(),
       durationMs
     };
   } finally {
@@ -20093,7 +20085,7 @@ async function run() {
     core.setOutput("response-body", result.body);
     if (result.statusCode >= 200 && result.statusCode < 300) {
       const body = JSON.parse(result.body);
-      const passed = body.pipelinePasses === true;
+      const passed = mode === "report" ? true : body.pipelinePasses === true;
       if (!passed) {
         core.setFailed(
           `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} 
@@ -20102,8 +20094,7 @@ ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null,
       } else if (passed && body.message) {
         core.info(
           `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} 
-${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}
-${LOG_STYLE.bold}Findings:${LOG_STYLE.reset} ${JSON.stringify(body.findings, null, 2)}`
+${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         );
       } else {
         core.info(
