@@ -19905,11 +19905,13 @@ function extractPrNumber(eventName, ref) {
   const m = /refs\/pull\/(\d+)\//.exec(ref);
   return m ? Number.parseInt(m[1], 10) : null;
 }
-function buildCommentBody(passed, policy) {
+function buildCommentBody(passed, policy, mode, url) {
   const statusLine = passed ? "**Status:** \u2705 Passed" : "**Status:** \u274C Failed";
-  const lines = [COMMENT_MARKER, "## Dependabot Policy Check", "", statusLine];
+  const lines = [COMMENT_MARKER, "## \u{1F916} Dependabot Policy Check", "", statusLine];
+  const modeLine = `**Mode:** ${mode}`;
+  lines.push(modeLine);
   const summary = policy.summary ?? {};
-  lines.push("", " ### Summary:");
+  lines.push("", "### Summary:");
   for (const [key, value] of Object.entries(summary)) {
     lines.push(`- **${key}:** ${value}`);
   }
@@ -19918,6 +19920,7 @@ function buildCommentBody(passed, policy) {
   for (const [key, value] of Object.entries(violations)) {
     lines.push(`- **${key}:** ${value.length}`);
   }
+  lines.push("", `### [View dependabot alerts](${url})`);
   return lines.join("\n");
 }
 function githubHeaders(token) {
@@ -19995,10 +19998,11 @@ async function upsertPrComment(opts, body) {
     await createPrComment(opts, body);
   }
 }
-async function postPrComment(githubToken, repo, prNumber, body, passed) {
+async function postPrComment(githubToken, repo, prNumber, body, passed, mode) {
   if (prNumber !== null) {
     const [owner, repoName] = repo.split("/");
-    const commentBody = buildCommentBody(passed, body);
+    const url = `https://github.com/${owner}/${repoName}/security/dependabot`;
+    const commentBody = buildCommentBody(passed, body, mode, url);
     await upsertPrComment(
       { token: githubToken, owner, repo: repoName, prNumber },
       commentBody
@@ -20107,7 +20111,7 @@ ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null,
           process.env.GITHUB_REF
         );
         try {
-          await postPrComment(githubToken, repo, prNumber, body, passed);
+          await postPrComment(githubToken, repo, prNumber, body, passed, mode);
         } catch (commentError) {
           const commentMsg = commentError instanceof Error ? commentError.message : String(commentError);
           core.warning(`Failed to post PR comment: ${commentMsg}`);
