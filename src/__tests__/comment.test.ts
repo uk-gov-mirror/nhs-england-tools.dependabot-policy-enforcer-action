@@ -54,7 +54,7 @@ function makePolicy(overrides: Partial<PolicyResponse> = {}): PolicyResponse {
     mode: 'enforce',
     repository: 'org/repo',
     summary: {},
-    findings: { violations: {} },
+    findings: { critical: [{}] },
     ...overrides,
   }
 }
@@ -95,45 +95,45 @@ describe('extractPrNumber', () => {
 
 describe('buildCommentBody', () => {
   it('should include the COMMENT_MARKER', () => {
-    const body = buildCommentBody(true, makePolicy())
+    const body = buildCommentBody(true, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain(COMMENT_MARKER)
   })
 
   it('should always start with COMMENT_MARKER', () => {
-    const body = buildCommentBody(true, makePolicy({ mode: 'auditing' }))
+    const body = buildCommentBody(true, makePolicy({ mode: 'report' }), 'report', 'https://example.com/report')
     expect(body.startsWith(COMMENT_MARKER)).toBe(true)
   })
 
   it('should include heading', () => {
-    const body = buildCommentBody(true, makePolicy())
+    const body = buildCommentBody(true, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain('## 🤖 Dependabot Policy Check')
   })
 
   it('should show passed status with checkmark', () => {
-    const body = buildCommentBody(true, makePolicy())
+    const body = buildCommentBody(true, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain('✅ Passed')
     expect(body).not.toContain('❌')
   })
 
   it('should show failed status with cross', () => {
-    const body = buildCommentBody(false, makePolicy())
+    const body = buildCommentBody(false, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain('❌ Failed')
     expect(body).not.toContain('✅')
   })
 
   it('should include ### Summary: section', () => {
-    const body = buildCommentBody(true, makePolicy())
+    const body = buildCommentBody(true, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain('### Summary:')
   })
 
   it('should render summary entries as bullet list', () => {
-    const body = buildCommentBody(false, makePolicy({ summary: { totalOpenAlerts: 3, violatingAlerts: 1 } }))
+    const body = buildCommentBody(false, makePolicy({ summary: { totalOpenAlerts: 3, violatingAlerts: 1 } }), 'enforce', 'https://example.com/report')
     expect(body).toContain('- **totalOpenAlerts:** 3')
     expect(body).toContain('- **violatingAlerts:** 1')
   })
 
   it('should render empty summary with no bullet items', () => {
-    const body = buildCommentBody(true, makePolicy({ summary: {} }))
+    const body = buildCommentBody(true, makePolicy({ summary: {} }), 'enforce', 'https://example.com/report')
     const summaryIdx = body.indexOf('### Summary:')
     const violationsIdx = body.indexOf('### Violations:')
     const between = body.slice(summaryIdx, violationsIdx)
@@ -141,7 +141,7 @@ describe('buildCommentBody', () => {
   })
 
   it('should include ### Violations: section', () => {
-    const body = buildCommentBody(true, makePolicy())
+    const body = buildCommentBody(true, makePolicy(), 'enforce', 'https://example.com/report')
     expect(body).toContain('### Violations:')
   })
 
@@ -178,7 +178,7 @@ describe('postPrComment', () => {
   }
 
   it('should do nothing when prNumber is null', async () => {
-    await postPrComment('tok', 'test-org/test-repo', null, VALID_BODY, true)
+    await postPrComment('tok', 'test-org/test-repo', null, VALID_BODY, true, 'enforce')
 
     expect(mockHttp.get).not.toHaveBeenCalled()
     expect(mockHttp.post).not.toHaveBeenCalled()
@@ -189,7 +189,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, '[]'))
     mockHttp.post.mockResolvedValueOnce(makeResponse(201, '{}'))
 
-    await postPrComment('tok', 'test-org/test-repo', 7, VALID_BODY, true)
+    await postPrComment('tok', 'test-org/test-repo', 7, VALID_BODY, true, 'enforce')
 
     expect(mockHttp.get).toHaveBeenCalledOnce()
     const [listUrl] = mockHttp.get.mock.calls[0] as [string]
@@ -208,7 +208,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, JSON.stringify(existing)))
     mockHttp.patch.mockResolvedValueOnce(makeResponse(200, '{}'))
 
-    await postPrComment('tok', 'test-org/test-repo', 7, VALID_BODY, false)
+    await postPrComment('tok', 'test-org/test-repo', 7, VALID_BODY, false, 'enforce')
 
     expect(mockHttp.patch).toHaveBeenCalledOnce()
     expect(mockHttp.post).not.toHaveBeenCalled()
@@ -220,7 +220,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, '[]'))
     mockHttp.post.mockResolvedValueOnce(makeResponse(201, '{}'))
 
-    await postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, true)
+    await postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, true, 'enforce')
 
     const [, postBody] = mockHttp.post.mock.calls[0] as [string, string]
     expect(JSON.parse(postBody).body).toContain('✅ Passed')
@@ -230,7 +230,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, '[]'))
     mockHttp.post.mockResolvedValueOnce(makeResponse(201, '{}'))
 
-    await postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, false)
+    await postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, false, 'enforce')
 
     const [, postBody] = mockHttp.post.mock.calls[0] as [string, string]
     expect(JSON.parse(postBody).body).toContain('❌ Failed')
@@ -240,7 +240,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, '[]'))
     mockHttp.post.mockResolvedValueOnce(makeResponse(201, '{}'))
 
-    await postPrComment('my-secret-token', 'test-org/test-repo', 3, VALID_BODY, true)
+    await postPrComment('my-secret-token', 'test-org/test-repo', 3, VALID_BODY, true, 'enforce')
 
     const [_, headers] = mockHttp.get.mock.calls[0] as [string, Record<string, string>]
 
@@ -251,7 +251,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(403, 'Forbidden'))
 
     await expect(
-      postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, true),
+      postPrComment('tok', 'test-org/test-repo', 1, VALID_BODY, true, 'enforce'),
     ).rejects.toThrow('HTTP 403')
   })
 
@@ -259,7 +259,7 @@ describe('postPrComment', () => {
     mockHttp.get.mockResolvedValueOnce(makeResponse(200, '[]'))
     mockHttp.post.mockResolvedValueOnce(makeResponse(201, '{}'))
 
-    await postPrComment('tok', 'my-org/my-repo', 9, VALID_BODY, true)
+    await postPrComment('tok', 'my-org/my-repo', 9, VALID_BODY, true, 'enforce')
 
     const [listUrl] = mockHttp.get.mock.calls[0] as [string]
     expect(listUrl).toContain('/repos/my-org/my-repo/issues/9/comments')

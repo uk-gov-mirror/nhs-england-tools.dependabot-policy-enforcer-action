@@ -22,9 +22,7 @@ export interface PolicyResponse {
   mode: string
   repository: string
   summary: Record<string, number>
-  findings: {
-    [key: string]: Array<unknown>
-  }
+  findings: Record<string, Array<unknown>>
   message?: string
 }
 
@@ -38,6 +36,7 @@ export function extractPrNumber(eventName?: string, ref?: string): number | null
   const m = /refs\/pull\/(\d+)\//.exec(ref)
   return m ? Number.parseInt(m[1], 10) : null
 }
+
 export function buildCommentBody(passed: boolean, policy: PolicyResponse, mode: string, url: string): string {
   const statusLine = passed ? '**Status:** ✅ Passed' : '**Status:** ❌ Failed'
   const lines: string[] = [COMMENT_MARKER, '## 🤖 Dependabot Policy Check', '', statusLine]
@@ -50,7 +49,7 @@ export function buildCommentBody(passed: boolean, policy: PolicyResponse, mode: 
     lines.push(`- **${key}:** ${value}`)
   }
 
-  const violations = policy.findings?? {}
+  const violations = policy.findings ?? {}
   lines.push('', '### Violations:')
   for (const [key, value] of Object.entries(violations)) {
     lines.push(`- **${key}:** ${value.length}`)
