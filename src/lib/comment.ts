@@ -23,7 +23,7 @@ export interface PolicyResponse {
   repository: string
   summary: Record<string, number>
   findings: {
-    violations: Record<string, Array<unknown>>
+    [key: string]: Array<unknown>
   }
   message?: string
 }
@@ -38,13 +38,14 @@ export function extractPrNumber(eventName?: string, ref?: string): number | null
   const m = /refs\/pull\/(\d+)\//.exec(ref)
   return m ? Number.parseInt(m[1], 10) : null
 }
-
-export function buildCommentBody(passed: boolean, policy: PolicyResponse): string {
+export function buildCommentBody(passed: boolean, policy: PolicyResponse, mode: string, url: string): string {
   const statusLine = passed ? '**Status:** ✅ Passed' : '**Status:** ❌ Failed'
-  const lines: string[] = [COMMENT_MARKER, '## Dependabot Policy Check', '', statusLine]
+  const lines: string[] = [COMMENT_MARKER, '## 🤖 Dependabot Policy Check', '', statusLine]
 
+  const modeLine = `**Mode:** ${mode}`
+  lines.push(modeLine)
   const summary = policy.summary ?? {}
-  lines.push('', ' ### Summary:')
+  lines.push('', '### Summary:')
   for (const [key, value] of Object.entries(summary)) {
     lines.push(`- **${key}:** ${value}`)
   }
@@ -54,6 +55,8 @@ export function buildCommentBody(passed: boolean, policy: PolicyResponse): strin
   for (const [key, value] of Object.entries(violations)) {
     lines.push(`- **${key}:** ${value.length}`)
   }
+
+  lines.push('', `### [View dependabot alerts](${url})`)
 
   return lines.join('\n')
 }
@@ -166,10 +169,11 @@ async function upsertPrComment(opts: CommentOptions, body: string): Promise<void
   }
 }
 
-export async function postPrComment(githubToken: string, repo: string, prNumber: number | null, body: PolicyResponse, passed: boolean): Promise<void> {
+export async function postPrComment(githubToken: string, repo: string, prNumber: number | null, body: PolicyResponse, passed: boolean, mode: string): Promise<void> {
   if (prNumber !== null) {
     const [owner, repoName] = repo.split('/')
-    const commentBody = buildCommentBody(passed, body)
+    const url = `https://github.com/${owner}/${repoName}/security/dependabot`
+    const commentBody = buildCommentBody(passed, body, mode, url)
     await upsertPrComment(
       { token: githubToken, owner, repo: repoName, prNumber },
       commentBody,

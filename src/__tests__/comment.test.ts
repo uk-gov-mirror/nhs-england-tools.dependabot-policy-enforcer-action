@@ -106,7 +106,7 @@ describe('buildCommentBody', () => {
 
   it('should include heading', () => {
     const body = buildCommentBody(true, makePolicy())
-    expect(body).toContain('## Dependabot Policy Check')
+    expect(body).toContain('## 🤖 Dependabot Policy Check')
   })
 
   it('should show passed status with checkmark', () => {
@@ -147,17 +147,18 @@ describe('buildCommentBody', () => {
 
   it('should render violations as count bullet list', () => {
     const body = buildCommentBody(false, makePolicy({
-      findings: { violations: { critical: ['a', 'b'], medium: ['c'] } },
-    }))
+      findings: { critical: ['a', 'b'], medium: ['c'] },
+    }), 'enforce', 'https://example.com/report')
     expect(body).toContain('- **critical:** 2')
     expect(body).toContain('- **medium:** 1')
   })
 
   it('should render empty violations with no bullet items', () => {
-    const body = buildCommentBody(true, makePolicy({ findings: { violations: {} } }))
+    const body = buildCommentBody(true, makePolicy({ findings: {} }), 'enforce', 'https://example.com/report')
     const violationsIdx = body.indexOf('### Violations:')
-    const after = body.slice(violationsIdx + '### Violations:'.length)
-    expect(after.trim()).toBe('')
+    const afterViolations = body.indexOf('### [View dependabot alerts]')
+    const between = body.slice(violationsIdx, afterViolations)
+    expect(between).not.toContain('- **')
   })
 })
 

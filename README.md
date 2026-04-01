@@ -92,6 +92,7 @@ jobs:
           api-endpoint: ${{ vars.DEPENDABOT_ENFORCER_API_ENDPOINT }}
           secret: ${{ secrets.DEPENDABOT_ENFORCER_SECRET }}
           mode: ${{ vars.DEPENDABOT_ENFORCER_MODE }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 ### Inputs

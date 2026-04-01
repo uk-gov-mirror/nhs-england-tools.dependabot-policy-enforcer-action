@@ -148,7 +148,7 @@ export async function run(): Promise<void> {
           process.env.GITHUB_REF,
         );
         try {
-          await postPrComment(githubToken, repo, prNumber, body, passed);
+          await postPrComment(githubToken, repo, prNumber, body, passed, mode);
         } catch (commentError) {
           const commentMsg =
             commentError instanceof Error

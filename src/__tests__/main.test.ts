@@ -395,7 +395,7 @@ describe("PR comment integration", () => {
 
     mockSendPolicyRequest.mockResolvedValue({
       statusCode: 200,
-      body: '{"pipelinePasses":"true","mode":"enforce", "summary": {"totalOpenAlerts": 0, "violatingAlerts": 0}, "findings": {"violations": {"critical": [], "medium": [], "low": []}}}',
+      body: '{"pipelinePasses":true,"mode":"enforce", "summary": {"totalOpenAlerts": 0, "violatingAlerts": 0}, "findings": {"violations": {"critical": [], "medium": [], "low": []}}}',
       durationMs: 30,
     });
 
@@ -426,6 +426,7 @@ describe("PR comment integration", () => {
     expect(call[1]).toBe("test-org/test-repo"); // repo
     expect(call[2]).toBe(12);                   // prNumber
     expect(call[4]).toBe(true);                 // passed
+    expect(call[5]).toBe("enforce");             // mode
   });
 
   it("should not log a separate PR comment info message", async () => {
