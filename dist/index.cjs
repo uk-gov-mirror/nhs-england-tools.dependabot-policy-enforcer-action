@@ -19864,20 +19864,12 @@ function generateSignature(opts) {
 }
 
 // src/lib/request.ts
-var MAX_BODY_LOG_LENGTH = 2e3;
 var USER_AGENT = "dependabot-policy-enforcer-action";
-function truncateBody(body) {
-  if (body.length <= MAX_BODY_LOG_LENGTH) {
-    return body;
-  }
-  const overflow = body.length - MAX_BODY_LOG_LENGTH;
-  return `${body.slice(0, MAX_BODY_LOG_LENGTH)}\u2026 [truncated ${overflow} chars]`;
-}
 async function sendPolicyRequest(opts) {
-  const { repo, secret, endpoint, timeoutMs = 1e4 } = opts;
+  const { repo, secret, endpoint, mode, timeoutMs = 1e4 } = opts;
   const signatureData = generateSignature({ repo, secret });
   const signatureHeader = `${signatureData.prefix}${signatureData.signature}`;
-  const requestBody = JSON.stringify({ action: "check" });
+  const requestBody = JSON.stringify({ action: "check", mode });
   const headers = {
     "Content-Type": "application/json",
     "X-Hub-Repository": signatureData.repo,
@@ -19894,7 +19886,7 @@ async function sendPolicyRequest(opts) {
     const rawBody = await response.readBody();
     return {
       statusCode: response.message.statusCode ?? 0,
-      body: truncateBody(rawBody.trim() || "<empty>"),
+      body: rawBody.trim(),
       durationMs
     };
   } finally {
@@ -19903,6 +19895,13 @@ async function sendPolicyRequest(opts) {
 }
 
 // src/main.ts
+var LOG_STYLE = {
+  reset: "\x1B[0m",
+  bold: "\x1B[1m",
+  green: "\x1B[32m",
+  yellow: "\x1B[33m",
+  red: "\x1B[31m"
+};
 function validateUrl(value) {
   try {
     new URL(value);
@@ -19915,8 +19914,12 @@ async function run() {
   try {
     const secret = core.getInput("secret");
     const endpoint = core.getInput("api-endpoint");
-    const timeoutMs = Number.parseInt(core.getInput("timeout-ms") || "10000", 10);
+    const timeoutMs = Number.parseInt(
+      core.getInput("timeout-ms") || "10000",
+      10
+    );
     const repo = process.env.GITHUB_REPOSITORY ?? "";
+    const mode = (core.getInput("mode") || "enforce").trim().toLowerCase();
     core.setSecret(secret);
     if (!secret) {
       core.setFailed(
@@ -19948,28 +19951,51 @@ async function run() {
       );
       return;
     }
+    if (mode !== "enforce" && mode !== "report") {
+      core.setFailed(
+        `mode must be either "enforce" or "report", got "${core.getInput("mode")}".`
+      );
+      return;
+    }
     core.info(`Checking Dependabot policy for ${repo}\u2026`);
     const result = await sendPolicyRequest({
       repo,
       secret,
       endpoint,
+      mode,
       timeoutMs
     });
     core.setOutput("status-code", result.statusCode.toString());
     core.setOutput("response-body", result.body);
     if (result.statusCode >= 200 && result.statusCode < 300) {
-      core.info(
-        `Policy check passed (${result.statusCode}) in ${result.durationMs}ms.`
-      );
+      const body = JSON.parse(result.body);
+      const passed = mode === "report" ? true : body.pipelinePasses === true;
+      if (!passed) {
+        core.setFailed(
+          `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} 
+${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
+        );
+      } else if (passed && body.message) {
+        core.info(
+          `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} 
+${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
+        );
+      } else {
+        core.info(
+          `${LOG_STYLE.bold}${LOG_STYLE.green}Policy check passed (${result.statusCode}) in ${result.durationMs}ms.${LOG_STYLE.reset}`
+        );
+      }
     } else {
       core.setFailed(
-        `Policy check failed with status ${result.statusCode} (${result.durationMs}ms).
-Response: ${result.body}`
+        `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed with status ${result.statusCode} (${result.durationMs}ms).${LOG_STYLE.reset}
+${LOG_STYLE.bold}Response:${LOG_STYLE.reset} ${result.body}`
       );
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    core.setFailed(`Unexpected error: ${message}`);
+    core.setFailed(
+      `${LOG_STYLE.bold}${LOG_STYLE.red}Unexpected error:${LOG_STYLE.reset} ${message}`
+    );
   }
 }
 run();
