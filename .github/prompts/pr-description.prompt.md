@@ -32,7 +32,7 @@ Use this to understand:
 
 - **What changed** — which files, what kind of edits
 - **Why** — infer from commit messages and the nature of the diff
-- **How it was tested** — test files changed, CI config, `Makefile` conventions
+- **How it was tested** — test files changed, CI configuration, `Makefile` conventions
 
 ### 3. Ask for acceptance criteria
 
