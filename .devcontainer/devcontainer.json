@@ -35,6 +35,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        "vitest.explorer",
         "esbenp.prettier-vscode"
       ]
     }
