@@ -1,7 +1,6 @@
 /**
  * Common Github functions and helpers for the Dependabot Policy Enforcer action.
  */
-
 export const USER_AGENT = 'dependabot-policy-enforcer-action'
 export const GITHUB_API_BASE = 'https://api.github.com'
 

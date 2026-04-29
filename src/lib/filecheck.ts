@@ -1,5 +1,5 @@
-import { HttpClient } from '@actions/http-client'
-import { githubHeaders, USER_AGENT, GITHUB_API_BASE } from './github.js'
+import { HttpClient } from "@actions/http-client";
+import { githubHeaders, USER_AGENT, GITHUB_API_BASE } from "./github.js";
 
 /**
  * Known package and dependency management file names used to detect whether a
@@ -7,58 +7,55 @@ import { githubHeaders, USER_AGENT, GITHUB_API_BASE } from './github.js'
  */
 const PACKAGE_FILE_NAMES = new Set([
   // JavaScript / Node.js
-  'package.json',
-  'package-lock.json',
-  'yarn.lock',
-  'pnpm-lock.yaml',
-  '.npmrc',
+  "package.json",
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  ".npmrc",
   // Ruby
-  'Gemfile',
-  'Gemfile.lock',
+  "Gemfile",
+  "Gemfile.lock",
   // Go
-  'go.mod',
+  "go.mod",
   // Rust
-  'Cargo.toml',
-  'Cargo.lock',
+  "Cargo.toml",
+  "Cargo.lock",
   // PHP
-  'composer.json',
-  'composer.lock',
+  "composer.json",
+  "composer.lock",
   // Java / Kotlin (Maven & Gradle)
-  'pom.xml',
-  'build.gradle',
-  'build.gradle.kts',
-  'settings.gradle',
-  'settings.gradle.kts',
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "settings.gradle",
+  "settings.gradle.kts",
   // Python (requirements.txt like files handled in isPackageFile)
-  'pipfile',
-  'pipfile.lock',
-  'Pipfile',
-  'Pipfile.lock',
-  'setup.py',
-  'setup.cfg',
-  'pyproject.toml',
-  'poetry.lock',
-  'uv.lock',
+  "pipfile",
+  "pipfile.lock",
+  "Pipfile",
+  "Pipfile.lock",
+  "setup.py",
+  "setup.cfg",
+  "pyproject.toml",
+  "poetry.lock",
+  "uv.lock",
   // .NET / NuGet
-  'nuget.config',
-  'packages.config',
-  'paket.dependencies',
-  'paket.lock',
+  "nuget.config",
+  "packages.config",
+  "paket.dependencies",
+  "paket.lock",
   // Dart / Flutter
-  'pubspec.yaml',
-  'pubspec.lock',
-])
+  "pubspec.yaml",
+  "pubspec.lock",
+]);
 
-const PACKAGE_FILE_EXTENSIONS = ['.gemspec', '.csproj', '.fsproj', '.vbproj']
+const PACKAGE_FILE_EXTENSIONS = [".gemspec", ".csproj", ".fsproj", ".vbproj"];
 
-const ACTION_FILE_PREFIXES = [
-  '.github/actions/',
-  '.github/workflows/',
-]
+const ACTION_FILE_PREFIXES = [".github/actions/", ".github/workflows/"];
 
 export interface PrFile {
-  filename: string
-  status: string
+  filename: string;
+  status: string;
 }
 
 /**
@@ -66,10 +63,10 @@ export interface PrFile {
  * management file (e.g. package.json, go.mod, requirements-dev.txt).
  */
 export function isPackageFile(filename: string): boolean {
-  const base = (filename.split('/').pop() ?? filename)
-  if (PACKAGE_FILE_NAMES.has(base)) return true
-  if (/^requirements.*\.txt$/.test(base)) return true
-  return PACKAGE_FILE_EXTENSIONS.some(ext => base.endsWith(ext))
+  const base = filename.split("/").pop() ?? filename;
+  if (PACKAGE_FILE_NAMES.has(base)) return true;
+  if (/^requirements.*\.txt$/.test(base)) return true;
+  return PACKAGE_FILE_EXTENSIONS.some((ext) => base.endsWith(ext));
 }
 
 /**
@@ -77,7 +74,7 @@ export function isPackageFile(filename: string): boolean {
  * .github/workflows directories, indicating a GitHub Actions definition change.
  */
 export function isActionFile(filename: string): boolean {
-  return ACTION_FILE_PREFIXES.some(prefix => filename.startsWith(prefix))
+  return ACTION_FILE_PREFIXES.some((prefix) => filename.startsWith(prefix));
 }
 
 /**
@@ -85,26 +82,69 @@ export function isActionFile(filename: string): boolean {
  * or a GitHub Actions definition file — i.e. the PR could be fixing a
  * vulnerable dependency or action.
  */
-export function isDependencyUpdate(filename: string): boolean {
-  return isPackageFile(filename) || isActionFile(filename)
+export function isFileDependencyUpdate(filename: string): boolean {
+  return isPackageFile(filename) || isActionFile(filename);
 }
 
 /**
- * Returns the list of file paths changed by a pull request.
  * Calls the GitHub REST API: GET /repos/{owner}/{repo}/pulls/{prNumber}/files
- */
-export async function getChangedFiles(token: string, owner: string, repo: string, prNumber: number): Promise<string[]> {
-  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`
-  const client = new HttpClient(USER_AGENT)
+ * Will fetch max 3000 files (30 pages of 100) before giving up. Github limits to 3000 results for this endpoint,
+ * so this should be sufficient for all PRs.
+ *
+ * Returns true if the given PR includes changes to files that look like package/dependency management files or
+ * GitHub Actions definition files, indicating that the PR may be attempting to fix a vulnerable dependency or action.
+ **/
+export async function isDependencyUpdate(
+  token: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<boolean> {
+  const client = new HttpClient(USER_AGENT);
+  let page = 1;
+  const maxPages = 30;
   try {
-    const response = await client.get(url, githubHeaders(token))
-    const body = await response.readBody()
-    const status = response.message.statusCode ?? 0
-    if (status < 200 || status >= 300) {
-      throw new Error(`GitHub API error listing PR files: HTTP ${status}`)
+    while (page <= maxPages) {
+      const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100&page=${page}`;
+      const { files, hasNextPage } = await getPageOfFiles(
+        client,
+        url,
+        githubHeaders(token),
+      );
+
+      // check if files contains any package files or action files, if so we can stop and return immediately
+      if (files.some(isFileDependencyUpdate)) return true;
+      if (!hasNextPage) break;
+      page++;
+      if (page > maxPages) {
+        throw new Error(`PR #${prNumber} has more than ${maxPages * 100} changed files, which exceeds the maximum that can be checked for dependency updates.`);
+      }
     }
-    return (JSON.parse(body) as PrFile[]).map(f => f.filename)
   } finally {
-    client.dispose()
+    client.dispose();
   }
+  return false;
+}
+
+export async function getPageOfFiles(
+  client: HttpClient,
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ files: string[]; hasNextPage: boolean }> {
+  const response = await client.get(url, headers);
+  const body = await response.readBody();
+  const status = response.message.statusCode ?? 0;
+  if (status < 200 || status >= 300) {
+    throw new Error(`GitHub API error listing PR files: HTTP ${status}`);
+  }
+  const responseHeaders = response.message.headers;
+  const pageFiles = (JSON.parse(body) as PrFile[]).map((f) => f.filename);
+  let hasNextPage = true;
+  if (
+    !responseHeaders.link ||
+    ![responseHeaders.link].flat().join(", ").includes('rel="next"')
+  ) {
+    hasNextPage = false;
+  }
+  return { files: pageFiles, hasNextPage };
 }

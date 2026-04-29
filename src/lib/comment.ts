@@ -25,7 +25,7 @@ export interface PolicyResponse {
 }
 
 
-export type PolicyStatus = 'passed' | 'failed' | 'exempted' // expempted = failed but dependency update  was detected
+export type PolicyStatus = 'passed' | 'failed' | 'exempted' // Exempted = failed but dependency update  was detected
 
 export function buildCommentBody(status: PolicyStatus, policy: PolicyResponse, mode: string, url: string): string {
   const statusLine =
