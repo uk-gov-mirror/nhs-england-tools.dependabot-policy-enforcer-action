@@ -10,7 +10,7 @@ import * as core from "@actions/core";
 import { sendPolicyRequest } from "./lib/request.js";
 import { postPrComment, type PolicyStatus } from "./lib/comment.js";
 import { extractPrNumber } from "./lib/github.js";
-import { getChangedFiles, isDependencyUpdate } from "./lib/filecheck.js";
+import {isDependencyUpdate } from "./lib/filecheck.js";
 
 const LOG_STYLE = {
   reset: "\x1b[0m",
@@ -150,8 +150,8 @@ export async function run(): Promise<void> {
       if (mode === "enforce" && !passed && githubToken && prNumber !== null) {
         try {
           const [owner, repoName] = repo.split("/");
-          const files = await getChangedFiles(githubToken, owner, repoName, prNumber);
-          if (files.some(isDependencyUpdate)) {
+          const dependencyUpdate = await isDependencyUpdate(githubToken, owner, repoName, prNumber);
+          if (dependencyUpdate) {
             passed = true;
             status = 'exempted';
             core.info(

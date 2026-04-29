@@ -10,7 +10,7 @@ const {
   mockWarning,
   mockSendPolicyRequest,
   mockPostPrComment,
-  mockGetChangedFiles,
+  mockIsDependencyUpdate,
 } = vi.hoisted(() => ({
   mockGetInput: vi.fn(),
   mockSetSecret: vi.fn(),
@@ -20,7 +20,7 @@ const {
   mockWarning: vi.fn(),
   mockSendPolicyRequest: vi.fn(),
   mockPostPrComment: vi.fn(),
-  mockGetChangedFiles: vi.fn(),
+  mockIsDependencyUpdate: vi.fn(),
 }));
 
 vi.mock("@actions/core", () => ({
@@ -40,15 +40,9 @@ vi.mock("../../src/lib/comment.js", () => ({
   postPrComment: mockPostPrComment,
 }));
 
-vi.mock("../../src/lib/filecheck.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/lib/filecheck.js")>();
-  return {
-    getChangedFiles: mockGetChangedFiles,
-    isPackageFile: actual.isPackageFile,
-    isActionFile: actual.isActionFile,
-    isDependencyUpdate: actual.isDependencyUpdate,
-  };
-});
+vi.mock("../../src/lib/filecheck.js", () => ({
+  isDependencyUpdate: mockIsDependencyUpdate,
+}));
 
 vi.mock("../../src/lib/github.js", () => ({
   extractPrNumber: vi.fn().mockReturnValue(null),
@@ -57,6 +51,8 @@ vi.mock("../../src/lib/github.js", () => ({
 // Import run — the top-level run() call in main.ts will execute with mocked deps
 // which is fine since all mocks return undefined/empty by default
 import { run } from "../../src/main.js";
+import { isDependencyUpdate } from "../../src/lib/filecheck.js";
+import { mock } from "node:test";
 
 describe("Action Entry Point (run)", () => {
   const originalEnv = process.env;
@@ -567,7 +563,7 @@ describe("Package file change detection in enforce mode", () => {
     });
 
     mockPostPrComment.mockResolvedValue(undefined);
-    mockGetChangedFiles.mockResolvedValue([]);
+    mockIsDependencyUpdate.mockResolvedValue(false);
 
     const githubMod = await import("../../src/lib/github.js");
     mockExtractPrNumber = githubMod.extractPrNumber as ReturnType<typeof vi.fn>;
@@ -579,7 +575,7 @@ describe("Package file change detection in enforce mode", () => {
   });
 
   it("should not call setFailed and should pass status 'exempted' to postPrComment when package files are changed", async () => {
-    mockGetChangedFiles.mockResolvedValue(["package.json", "src/index.ts"]);
+    mockIsDependencyUpdate.mockResolvedValue(true);
 
     await run();
 
@@ -588,24 +584,9 @@ describe("Package file change detection in enforce mode", () => {
     expect(mockPostPrComment.mock.calls[0][4]).toBe('exempted');
   });
 
-  it("should not call setFailed when a github workflow file has been changed", async () => {
-    mockGetChangedFiles.mockResolvedValue([".github/workflows/ci.yml", "src/index.ts"]);
-
-    await run();
-
-    expect(mockSetFailed).not.toHaveBeenCalled();
-  });
-
-  it("should not call setFailed when an action definition file has been changed", async () => {
-    mockGetChangedFiles.mockResolvedValue([".github/actions/my-action/action.yml"]);
-
-    await run();
-
-    expect(mockSetFailed).not.toHaveBeenCalled();
-  });
 
   it("should log summary info when package files have been changed", async () => {
-    mockGetChangedFiles.mockResolvedValue(["yarn.lock"]);
+    mockIsDependencyUpdate.mockResolvedValue(true);
 
     await run();
 
@@ -617,7 +598,7 @@ describe("Package file change detection in enforce mode", () => {
   });
 
   it("should still call setFailed when no package files are changed", async () => {
-    mockGetChangedFiles.mockResolvedValue(["src/index.ts", "README.md"]);
+    mockIsDependencyUpdate.mockResolvedValue(false);
 
     await run();
 
@@ -640,7 +621,7 @@ describe("Package file change detection in enforce mode", () => {
 
     await run();
 
-    expect(mockGetChangedFiles).not.toHaveBeenCalled();
+    expect(mockIsDependencyUpdate).not.toHaveBeenCalled();
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("Policy check failed"),
     );
@@ -648,18 +629,17 @@ describe("Package file change detection in enforce mode", () => {
 
   it("should still call setFailed when prNumber is null", async () => {
     mockExtractPrNumber.mockReturnValue(null);
-    mockGetChangedFiles.mockResolvedValue(["package.json"]);
 
     await run();
 
-    expect(mockGetChangedFiles).not.toHaveBeenCalled();
+    expect(mockIsDependencyUpdate).not.toHaveBeenCalled();
     expect(mockSetFailed).toHaveBeenCalledWith(
       expect.stringContaining("Policy check failed"),
     );
   });
 
   it("should emit a warning and still call setFailed when getChangedFiles throws", async () => {
-    mockGetChangedFiles.mockRejectedValue(new Error("API rate limit"));
+    mockIsDependencyUpdate.mockRejectedValue(new Error("API rate limit"));
 
     await run();
 
@@ -685,7 +665,7 @@ describe("Package file change detection in enforce mode", () => {
 
     await run();
 
-    expect(mockGetChangedFiles).not.toHaveBeenCalled();
+    expect(mockIsDependencyUpdate).not.toHaveBeenCalled();
     expect(mockSetFailed).not.toHaveBeenCalled();
   });
 });
