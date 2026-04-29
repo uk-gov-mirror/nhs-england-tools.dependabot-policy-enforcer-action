@@ -19833,8 +19833,6 @@ async function sendPolicyRequest(opts) {
 }
 
 // src/lib/comment.ts
-var USER_AGENT2 = "dependabot-policy-enforcer-action";
-var GITHUB_API_BASE = "https://api.github.com";
 var COMMENT_MARKER = "<!-- dependabot-policy-enforcer -->";
 function buildCommentBody(status, policy, mode, url) {
   const statusLine = status === "passed" ? "**Status:** \u2705 Passed" : status === "exempted" ? "**Status:** \u26A0\uFE0F Exempted \u2014 dependency update detected" : "**Status:** \u274C Failed";
@@ -19857,7 +19855,7 @@ function buildCommentBody(status, policy, mode, url) {
 async function listPrComments(opts) {
   const { token, owner, repo, prNumber } = opts;
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`;
-  const client = new HttpClient(USER_AGENT2);
+  const client = new HttpClient(USER_AGENT);
   try {
     const response = await client.get(url, githubHeaders(token));
     const body = await response.readBody();
@@ -19873,7 +19871,7 @@ async function listPrComments(opts) {
 async function createPrComment(opts, body) {
   const { token, owner, repo, prNumber } = opts;
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/${prNumber}/comments`;
-  const client = new HttpClient(USER_AGENT2);
+  const client = new HttpClient(USER_AGENT);
   try {
     const response = await client.post(url, JSON.stringify({ body }), {
       ...githubHeaders(token),
@@ -19892,7 +19890,7 @@ async function createPrComment(opts, body) {
 async function updatePrComment(opts, body) {
   const { token, owner, repo, commentId } = opts;
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/issues/comments/${commentId}`;
-  const client = new HttpClient(USER_AGENT2);
+  const client = new HttpClient(USER_AGENT);
   try {
     const response = await client.patch(url, JSON.stringify({ body }), {
       ...githubHeaders(token),
@@ -19935,7 +19933,6 @@ async function postPrComment(githubToken, repo, prNumber, body, status, mode) {
 }
 
 // src/lib/filecheck.ts
-var import_http_client3 = __toESM(require_lib(), 1);
 var PACKAGE_FILE_NAMES = /* @__PURE__ */ new Set([
   // JavaScript / Node.js
   "package.json",
@@ -19980,10 +19977,7 @@ var PACKAGE_FILE_NAMES = /* @__PURE__ */ new Set([
   "pubspec.lock"
 ]);
 var PACKAGE_FILE_EXTENSIONS = [".gemspec", ".csproj", ".fsproj", ".vbproj"];
-var ACTION_FILE_PREFIXES = [
-  ".github/actions/",
-  ".github/workflows/"
-];
+var ACTION_FILE_PREFIXES = [".github/actions/", ".github/workflows/"];
 function isPackageFile(filename) {
   const base = filename.split("/").pop() ?? filename;
   if (PACKAGE_FILE_NAMES.has(base)) return true;
@@ -19993,23 +19987,47 @@ function isPackageFile(filename) {
 function isActionFile(filename) {
   return ACTION_FILE_PREFIXES.some((prefix) => filename.startsWith(prefix));
 }
-function isDependencyUpdate(filename) {
+function isFileDependencyUpdate(filename) {
   return isPackageFile(filename) || isActionFile(filename);
 }
-async function getChangedFiles(token, owner, repo, prNumber) {
-  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100`;
-  const client = new import_http_client3.HttpClient(USER_AGENT);
+async function isDependencyUpdate(token, owner, repo, prNumber) {
+  const client = new HttpClient(USER_AGENT);
+  let page = 1;
+  const maxPages = 30;
   try {
-    const response = await client.get(url, githubHeaders(token));
-    const body = await response.readBody();
-    const status = response.message.statusCode ?? 0;
-    if (status < 200 || status >= 300) {
-      throw new Error(`GitHub API error listing PR files: HTTP ${status}`);
+    while (page <= maxPages) {
+      const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${prNumber}/files?per_page=100&page=${page}`;
+      const { files, hasNextPage } = await getPageOfFiles(
+        client,
+        url,
+        githubHeaders(token)
+      );
+      if (files.some(isFileDependencyUpdate)) return true;
+      if (!hasNextPage) break;
+      page++;
+      if (page > maxPages) {
+        throw new Error(`PR #${prNumber} has more than ${maxPages * 100} changed files, which exceeds the maximum that can be checked for dependency updates.`);
+      }
     }
-    return JSON.parse(body).map((f) => f.filename);
   } finally {
     client.dispose();
   }
+  return false;
+}
+async function getPageOfFiles(client, url, headers) {
+  const response = await client.get(url, headers);
+  const body = await response.readBody();
+  const status = response.message.statusCode ?? 0;
+  if (status < 200 || status >= 300) {
+    throw new Error(`GitHub API error listing PR files: HTTP ${status}`);
+  }
+  const responseHeaders = response.message.headers;
+  const pageFiles = JSON.parse(body).map((f) => f.filename);
+  let hasNextPage = true;
+  if (!responseHeaders.link || ![responseHeaders.link].flat().join(", ").includes('rel="next"')) {
+    hasNextPage = false;
+  }
+  return { files: pageFiles, hasNextPage };
 }
 
 // src/main.ts
@@ -20100,29 +20118,29 @@ async function run() {
       if (mode === "enforce" && !passed && githubToken && prNumber !== null) {
         try {
           const [owner, repoName] = repo.split("/");
-          const files = await getChangedFiles(githubToken, owner, repoName, prNumber);
-          if (files.some(isDependencyUpdate)) {
+          const dependencyUpdate = await isDependencyUpdate(githubToken, owner, repoName, prNumber);
+          if (dependencyUpdate) {
             passed = true;
             status = "exempted";
-            core.info(
-              `${LOG_STYLE.bold}${LOG_STYLE.yellow}This PR changes dependency package or github action files. Allowing step to succeed.${LOG_STYLE.reset}.
-Please review the policy summary and ensure the PR is fixing a vulnerability or updating dependencies appropriately.
+            info(
+              `${LOG_STYLE.bold}${LOG_STYLE.yellow}This PR changes dependency package or github action files. Allowing step to succeed.${LOG_STYLE.reset}. 
+Please review the policy summary and ensure the PR is fixing a vulnerability or updating dependencies appropriately. 
 ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
             );
           }
-        } catch (filesError) {
-          const filesMsg = filesError instanceof Error ? filesError.message : String(filesError);
-          core.warning(`Failed to check PR changed files: ${filesMsg}`);
+        } catch (error2) {
+          const msg = error2 instanceof Error ? error2.message : "Unknown error";
+          warning(`Failed to check PR changed files: ${msg}`);
         }
       }
       if (!passed) {
         setFailed(
-          `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset}
+          `${LOG_STYLE.bold}${LOG_STYLE.red}Policy check failed:${LOG_STYLE.reset} 
 ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         );
       } else if (passed && body.message) {
         info(
-          `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message}
+          `${LOG_STYLE.bold}${LOG_STYLE.yellow}Policy check message:${LOG_STYLE.reset} ${body.message} 
 ${LOG_STYLE.bold}Summary:${LOG_STYLE.reset} ${JSON.stringify(body.summary, null, 2)}`
         );
       } else {
